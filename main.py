@@ -1,40 +1,191 @@
-# main.py
-# APPLICATION ENTRY POINT: The Core Architecture Orchestrator
-
+import os
 import sys
-from discovery import discover_networks
-from signal_analysis import process_signal_metrics
-from security_flags import execute_security_audit
-from visualisation import deploy_visualisation_pipeline
+import subprocess
+import re
+from datetime import datetime
+import matplotlib.pyplot as plt
 
-def main():
-    print("[Engine] Booting core network scanner framework...\n")
+def scan_wifi_networks():
+    """
+    Detects the operating system and scans for available wireless networks
+    using native system utilities (nmcli for Linux, netsh for Windows, airport for macOS).
+    """
+    networks = []
+    current_os = sys.platform
     
-    # STEP 1: Tell Module 1 (discovery) to scan the airwaves using your Wi-Fi card.
-    raw_data = discover_networks(interface="wlan0")
-    
-    # STEP 2: Safety Net. If your computer doesn't have a compatible Wi-Fi card, 
-    # instead of crashing or staying blank, we inject safe, simulated "test data" 
-    # so you can see the entire analytics engine work perfectly anyway!
-    if not raw_data:
-        print("[Notice] No physical wireless card detected. Injecting safe simulation data to test the pipeline...")
-        raw_data = [
-            {"ssid": "My-Home-WiFi", "bssid": "00:11:22:33:44:55", "signal_dbm": -42, "channel": 6, "frequency_band": "2.4 GHz", "encryption": "WPA2", "signal_quality": "", "security_flags": []},
-            {"ssid": "Neighbors-Router", "bssid": "AA:BB:CC:DD:EE:FF", "signal_dbm": -68, "channel": 11, "frequency_band": "2.4 GHz", "encryption": "WPA2", "signal_quality": "", "security_flags": []},
-            {"ssid": "Suspicious-Clone", "bssid": "AA:BB:CC:DD:EE:11", "signal_dbm": -70, "channel": 11, "frequency_band": "2.4 GHz", "encryption": "WPA2", "signal_quality": "", "security_flags": []},
-            {"ssid": "", "bssid": "11:22:33:44:55:66", "signal_dbm": -85, "channel": 36, "frequency_band": "5 GHz", "encryption": "OPEN", "signal_quality": "", "security_flags": []}
-        ]
+    # ------------------ LINUX SCAN ENGINE ------------------
+    if current_os.startswith("linux"):
+        print("[*] Linux detected. Initializing scan via nmcli...")
+        try:
+            result = subprocess.run(
+                ["nmcli", "-f", "SSID,BSSID,SIGNAL,CHAN,SECURITY", "device", "wifi", "list"], 
+                capture_output=True, text=True, errors="ignore"
+            )
+            if result.returncode != 0: return networks
 
-    # STEP 3: Pass the raw data to Module 2 (signal_analysis) to check signal quality and channel congestion.
-    stage_1 = process_signal_metrics(raw_data)
+            lines = result.stdout.splitlines()
+            if len(lines) <= 1: return networks
+                
+            header = lines[0]
+            ssid_start, bssid_start = header.find("SSID"), header.find("BSSID")
+            signal_start, chan_start = header.find("SIGNAL"), header.find("CHAN")
+            security_start = header.find("SECURITY")
+
+            for line in lines[1:]:
+                if not line.strip(): continue
+                ssid = line[ssid_start:bssid_start].strip()
+                bssid = line[bssid_start:signal_start].strip()
+                signal = line[signal_start:chan_start].strip()
+                channel = line[chan_start:security_start].strip()
+                encryption = line[security_start:].strip()
+                
+                if ssid == "--" or not ssid: ssid = "Hidden Network"
+                try: sig_val = int(signal)
+                except ValueError: sig_val = 0
+                    
+                networks.append({
+                    "ssid": ssid, "bssid": bssid, "rssi": sig_val, 
+                    "channel": channel, "encryption": encryption if encryption and encryption != "--" else "Open"
+                })
+        except Exception as e:
+            print(f"[-] Linux scan error: {e}")
+
+    # ------------------ WINDOWS SCAN ENGINE ------------------
+    elif current_os.startswith("win"):
+        print("[*] Windows detected. Initializing scan via netsh...")
+        try:
+            result = subprocess.run(
+                ["netsh", "wlan", "show", "networks", "mode=bssid"], 
+                capture_output=True, text=True, errors="ignore"
+            )
+            if result.returncode != 0: return networks
+
+            network_blocks = result.stdout.split("SSID ")
+            for block in network_blocks[1:]:
+                lines = block.splitlines()
+                if not lines: continue
+                
+                net_info = {"ssid": "Hidden Network", "bssid": "N/A", "rssi": 0, "channel": "N/A", "encryption": "Unknown"}
+                first_line = lines[0].strip()
+                ssid_match = re.search(r'^:\s*(.*)$', first_line)
+                if ssid_match and ssid_match.group(1).strip():
+                    net_info["ssid"] = ssid_match.group(1).strip()
+
+                for line in lines:
+                    line_stripped = line.strip()
+                    if "Authentication" in line_stripped:
+                        enc_match = re.search(r':\s*(.*)$', line_stripped)
+                        if enc_match: net_info["encryption"] = enc_match.group(1).strip()
+                    elif "BSSID" in line_stripped:
+                        bssid_match = re.search(r'BSSID\s*\d+\s*:\s*(.*)$', line_stripped)
+                        if bssid_match: net_info["bssid"] = bssid_match.group(1).strip()
+                    elif "Signal" in line_stripped:
+                        sig_match = re.search(r':\s*(\d+)%', line_stripped)
+                        if sig_match: net_info["rssi"] = int(sig_match.group(1))
+                    elif "Channel" in line_stripped:
+                        ch_match = re.search(r':\s*(\d+)$', line_stripped)
+                        if ch_match: net_info["channel"] = ch_match.group(1).strip()
+                networks.append(net_info)
+        except Exception as e:
+            print(f"[-] Windows scan error: {e}")
+
+    # ------------------ MACOS SCAN ENGINE ------------------
+    elif current_os.startswith("darwin"):
+        print("[*] macOS detected. Initializing scan via airport framework...")
+        try:
+            airport_path = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
+            result = subprocess.run([airport_path, "-s"], capture_output=True, text=True, errors="ignore")
+            if result.returncode != 0: return networks
+
+            lines = result.stdout.splitlines()
+            if len(lines) <= 1: return networks
+
+            header = lines[0]
+            ssid_end = header.find("BSSID")
+            
+            for line in lines[1:]:
+                if not line.strip(): continue
+                ssid = line[:ssid_end].strip()
+                parts = line[ssid_end:].split()
+                if len(parts) < 4: continue
+                
+                bssid = parts[0]
+                rssi_val = int(parts[1])
+                channel = parts[2].split(',')[0] # Grab main control channel
+                security = " ".join(parts[3:])
+                
+                # Convert Mac dBm RSSI (e.g., -50 to -100) to a rough 0-100% scale
+                signal_pct = 100 if rssi_val >= -50 else 0 if rssi_val <= -100 else int((rssi_val + 100) * 2)
+                if not ssid: ssid = "Hidden Network"
+
+                networks.append({
+                    "ssid": ssid, "bssid": bssid, "rssi": signal_pct,
+                    "channel": channel, "encryption": security
+                })
+        except Exception as e:
+            print(f"[-] macOS scan error: {e}")
+            
+    return networks
+
+def generate_visual_chart(scan_data, target_folder, timestamp):
+    if not scan_data: return
+    ssids = [f"{net['ssid']} (Ch:{net['channel']})" for net in scan_data[:15]]
+    signals = [net['rssi'] for net in scan_data[:15]]
     
-    # STEP 4: Pass those results to Module 3 (security_flags) to hunt for vulnerabilities and Evil Twins.
-    stage_2 = execute_security_audit(stage_1)
+    plt.figure(figsize=(10, 6))
+    colors = ['#1f77b4' if s > 70 else '#ff7f0e' if s > 40 else '#d62728' for s in signals]
+    plt.barh(ssids, signals, color=colors, height=0.6)
+    plt.xlabel('Signal Strength (%)')
+    plt.title('Wireless Network Signal Analysis')
+    plt.xlim(0, 100)
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
     
-    # STEP 5: Pass the fully audited data to Module 4 (visualisation) to draw the table and make the chart.
-    deploy_visualisation_pipeline(stage_2)
+    chart_path = os.path.join(target_folder, f"wifi_chart_{timestamp}.png")
+    plt.savefig(chart_path, dpi=150)
+    plt.close()
+    print(f"[+] Graphical analysis chart saved to: {chart_path}")
+
+def export_report_to_desktop(scan_data):
+    home_path = os.path.expanduser('~')
+    target_folder = os.path.join(home_path, 'Desktop', 'Wireless_Scan_Reports')
     
-    print("\n[Engine] Run complete! Your visual charts and terminal tables have been successfully updated.")
+    if not os.path.exists(target_folder):
+        os.makedirs(target_folder)
+        print(f"\n[+] Target folder set up at: {target_folder}")
+        
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_name = f"wifi_report_{timestamp}.txt"
+    full_file_path = os.path.join(target_folder, file_name)
+    
+    try:
+        with open(full_file_path, 'w', encoding='utf-8') as file:
+            file.write("==================================================\n")
+            file.write("       WIRELESS NETWORK SECURITY & AUDIT REPORT   \n")
+            file.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            file.write("==================================================\n\n")
+            for idx, network in enumerate(scan_data, start=1):
+                file.write(f"[{idx}] NETWORK INDEX LOG\n")
+                file.write(f"    SSID:       {network['ssid']}\n")
+                file.write(f"    BSSID:      {network['bssid']}\n")
+                file.write(f"    Signal:     {network['rssi']}%\n")
+                file.write(f"    Channel:    {network['channel']}\n")
+                file.write(f"    Encryption: {network['encryption']}\n")
+                file.write("-" * 50 + "\n")
+        print(f"[+] Metric report saved to: {full_file_path}")
+        generate_visual_chart(scan_data, target_folder, timestamp)
+    except Exception as e:
+        print(f"[-] File write error: {e}")
+
+def display_dashboard(scan_data):
+    print("\n" + "="*65)
+    print(f" {'SSID':<25} | {'Channel':<7} | {'Signal':<8} | {'Security':<15} ")
+    print("="*65)
+    for net in scan_data:
+        print(f" {net['ssid'][:25]:<25} | {net['channel']:<7} | {net['rssi']}%:<8} | {net['encryption']:<15} ")
+    print("="*65 + "\n")
 
 if __name__ == "__main__":
-    main()
+    results = scan_wifi_networks()
+    display_dashboard(results)
+    export_report_to_desktop(results)
