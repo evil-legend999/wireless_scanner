@@ -31,7 +31,12 @@ def scan_wifi_networks():
         try:
             result = subprocess.run(["netsh", "wlan", "show", "networks", "mode=bssid"], capture_output=True, text=True, errors="ignore")
             if result.returncode != 0: return networks
-            network_blocks = result.stdout.split("SSID ")
+            
+            # NORMALIZE WINDOWS LINE ENDINGS NATIVELY
+            clean_stdout = result.stdout.replace('\r\n', '\n')
+            
+            # Split blocks accurately now that line breaks are uniform
+            network_blocks = clean_stdout.split("SSID ")
             for block in network_blocks[1:]:
                 lines = block.splitlines()
                 if not lines: continue
