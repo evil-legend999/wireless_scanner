@@ -27,24 +27,37 @@ def export_text_report(scan_data, target_folder, timestamp):
         print(f"[-] File write error: {e}")
 
 def display_dashboard(scan_data):
-    print("\n" + "="*70)
-    print(f" {'SSID':<25} | {'Channel':<7} | {'Signal Strength Bar':<30} ")
-    print("="*70)
+    # Expanded technical layout columns
+    print("\n" + "="*115)
+    print(f" {'SSID':<18} | {'BSSID':<17} | {'Chan':<4} | {'Encryption':<12} | {'Security Risk':<24} | {'Signal Bar':<15} ")
+    print("="*115)
+    
     for net in scan_data:
+        # Generate the terminal block bars
         bar_chunks = int(net['rssi'] / 10)
         signal_bar = "█" * bar_chunks + "░" * (10 - bar_chunks)
         visual_bar = f"{signal_bar} ({net['rssi']}%)"
-        print(f" {net['ssid'][:25]:<25} | {net['channel']:<7} | {visual_bar:<30} ")
-    print("="*70 + "\n")
+        
+        # Truncate strings cleanly so columns never bleed or break alignment
+        clean_ssid = net['ssid'][:18]
+        clean_bssid = net['bssid'][:17]
+        clean_chan = net['channel'][:4]
+        clean_enc = net['encryption'][:12]
+        clean_risk = net['risk_level'][:24]
+        
+        print(f" {clean_ssid:<18} | {clean_bssid:<17} | {clean_chan:<4} | {clean_enc:<12} | {clean_risk:<24} | {visual_bar:<15} ")
+    print("="*115 + "\n")
 
 if __name__ == "__main__":
     raw_results = discovery.scan_wifi_networks()
     audited_results = security_flags.audit_security(raw_results)
     display_dashboard(audited_results)
+    
     home_path = os.path.expanduser('~')
     target_folder = os.path.join(home_path, 'Desktop', 'Wireless_Scan_Reports')
     if not os.path.exists(target_folder):
         os.makedirs(target_folder)
+        
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     export_text_report(audited_results, target_folder, timestamp)
     visualisation.generate_visual_chart(audited_results, target_folder, timestamp)
