@@ -6,23 +6,18 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 def scan_wifi_networks():
-    """
-    Detects the operating system and scans for available wireless networks
-    using native system utilities (nmcli for Linux, netsh for Windows, airport for macOS).
-    """
+    """Detects the OS and scans for networks using native utilities."""
     networks = []
     current_os = sys.platform
     
-    # ------------------ LINUX SCAN ENGINE ------------------
+    # ------------------ LINUX ENGINE ------------------
     if current_os.startswith("linux"):
-        print("[*] Linux detected. Initializing scan via nmcli...")
         try:
             result = subprocess.run(
                 ["nmcli", "-f", "SSID,BSSID,SIGNAL,CHAN,SECURITY", "device", "wifi", "list"], 
                 capture_output=True, text=True, errors="ignore"
             )
             if result.returncode != 0: return networks
-
             lines = result.stdout.splitlines()
             if len(lines) <= 1: return networks
                 
@@ -50,16 +45,14 @@ def scan_wifi_networks():
         except Exception as e:
             print(f"[-] Linux scan error: {e}")
 
-    # ------------------ WINDOWS SCAN ENGINE ------------------
+    # ------------------ WINDOWS ENGINE ------------------
     elif current_os.startswith("win"):
-        print("[*] Windows detected. Initializing scan via netsh...")
         try:
             result = subprocess.run(
                 ["netsh", "wlan", "show", "networks", "mode=bssid"], 
                 capture_output=True, text=True, errors="ignore"
             )
             if result.returncode != 0: return networks
-
             network_blocks = result.stdout.split("SSID ")
             for block in network_blocks[1:]:
                 lines = block.splitlines()
@@ -89,14 +82,12 @@ def scan_wifi_networks():
         except Exception as e:
             print(f"[-] Windows scan error: {e}")
 
-    # ------------------ MACOS SCAN ENGINE ------------------
+    # ------------------ MACOS ENGINE ------------------
     elif current_os.startswith("darwin"):
-        print("[*] macOS detected. Initializing scan via airport framework...")
         try:
             airport_path = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
             result = subprocess.run([airport_path, "-s"], capture_output=True, text=True, errors="ignore")
             if result.returncode != 0: return networks
-
             lines = result.stdout.splitlines()
             if len(lines) <= 1: return networks
 
@@ -111,10 +102,9 @@ def scan_wifi_networks():
                 
                 bssid = parts[0]
                 rssi_val = int(parts[1])
-                channel = parts[2].split(',')[0] # Grab main control channel
+                channel = parts[2].split(',')[0]
                 security = " ".join(parts[3:])
                 
-                # Convert Mac dBm RSSI (e.g., -50 to -100) to a rough 0-100% scale
                 signal_pct = 100 if rssi_val >= -50 else 0 if rssi_val <= -100 else int((rssi_val + 100) * 2)
                 if not ssid: ssid = "Hidden Network"
 
@@ -144,7 +134,6 @@ def generate_visual_chart(scan_data, target_folder, timestamp):
     chart_path = os.path.join(target_folder, f"wifi_chart_{timestamp}.png")
     plt.savefig(chart_path, dpi=150)
     plt.close()
-    print(f"[+] Graphical analysis chart saved to: {chart_path}")
 
 def export_report_to_desktop(scan_data):
     home_path = os.path.expanduser('~')
@@ -152,7 +141,7 @@ def export_report_to_desktop(scan_data):
     
     if not os.path.exists(target_folder):
         os.makedirs(target_folder)
-        print(f"\n[+] Target folder set up at: {target_folder}")
+        print(f"\n[+] Created automatic folder structure: {target_folder}")
         
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     file_name = f"wifi_report_{timestamp}.txt"
@@ -172,18 +161,22 @@ def export_report_to_desktop(scan_data):
                 file.write(f"    Channel:    {network['channel']}\n")
                 file.write(f"    Encryption: {network['encryption']}\n")
                 file.write("-" * 50 + "\n")
-        print(f"[+] Metric report saved to: {full_file_path}")
+        print(f"[+] Clean metric report successfully saved to: {full_file_path}")
         generate_visual_chart(scan_data, target_folder, timestamp)
     except Exception as e:
         print(f"[-] File write error: {e}")
 
 def display_dashboard(scan_data):
-    print("\n" + "="*65)
-    print(f" {'SSID':<25} | {'Channel':<7} | {'Signal':<8} | {'Security':<15} ")
-    print("="*65)
+    print("\n" + "="*70)
+    print(f" {'SSID':<25} | {'Channel':<7} | {'Signal Strength Bar':<30} ")
+    print("="*70)
+    
     for net in scan_data:
-        print(f" {net['ssid'][:25]:<25} | {net['channel']:<7} | {f"{net['rssi']}%":<8} | {net['encryption']:<15} ")
-    print("="*65 + "\n")
+        bar_chunks = int(net['rssi'] / 10)
+        signal_bar = "█" * bar_chunks + "░" * (10 - bar_chunks)
+        visual_bar = f"{signal_bar} ({net['rssi']}%)"
+        print(f" {net['ssid'][:25]:<25} | {net['channel']:<7} | {visual_bar:<30} ")
+    print("="*70 + "\n")
 
 if __name__ == "__main__":
     results = scan_wifi_networks()
