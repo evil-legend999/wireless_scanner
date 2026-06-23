@@ -182,7 +182,7 @@ def display_dashboard(scan_data):
     print(f" {'SSID':<25} | {'Channel':<7} | {'Signal':<8} | {'Security':<15} ")
     print("="*65)
     for net in scan_data:
-        print(f" {net['ssid'][:25]:<25} | {net['channel']:<7} | {net['rssi']}%:<8} | {net['encryption']:<15} ")
+        print(f" {net['ssid'][:25]:<25} | {net['channel']:<7} | {f"{net['rssi']}%":<8} | {net['encryption']:<15} ")
     print("="*65 + "\n")
 
 if __name__ == "__main__":
